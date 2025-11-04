@@ -12,9 +12,10 @@ import FirebaseFirestore
 @MainActor // Ensures UI updates are always on the main thread
 class AuthViewModel: ObservableObject {
     
-    // @Published properties will automatically update any SwiftUI views observing this class
+    // @Published properties will automatically update any SwiftUI views
     @Published var userSession: FirebaseAuth.User?
-    @Published var currentUser: UserAccount? // Our custom user profile from Firestore
+    @Published var currentUser: UserAccount? // The main user account
+    @Published var candidateProfile: Candidate? // The detailed candidate profile
     
     @Published var isLoading = false
     @Published var errorMessage = ""
@@ -22,10 +23,9 @@ class AuthViewModel: ObservableObject {
     private var db = Firestore.firestore()
 
     init() {
-        // Check if a user was already logged in when the app launched
+        // Check if user was already logged in
         self.userSession = Auth.auth().currentUser
-        
-        // Asynchronously fetch their profile data if they exist
+
         Task {
             await fetchCurrentUser()
         }
@@ -52,36 +52,38 @@ class AuthViewModel: ObservableObject {
         errorMessage = ""
         
         do {
-            //Create the user in Firebase Auth
+            // 1. Create the user in Firebase Auth
             let authResult = try await Auth.auth().createUser(withEmail: email, password: password)
             let uid = authResult.user.uid
             self.userSession = authResult.user
 
-            //Create our custom UserAccount profile in Firestore
+            // 2. Create our custom UserAccount profile
             let newUser = UserAccount(id: uid, email: email, name: name, userRole: role)
             let userData = newUser.dictionary
             let userAccountRef = db.collection("users").document(uid)
             
+            // Use a 'batch write' to save all documents at once
             let batch = db.batch()
             batch.setData(userData, forDocument: userAccountRef)
 
-            //Create the specific role profile (Candidate or Recruiter)
+            // 3. Create the specific role profile
             if role == .candidate {
                 let newCandidate = Candidate(id: uid, name: name)
                 let candidateRef = db.collection("candidates").document(uid)
                 batch.setData(newCandidate.dictionary, forDocument: candidateRef)
                 
+                self.candidateProfile = newCandidate
+                
             } else if role == .recruiter {
-                // todo: Update companyID from a placeholder
                 let newRecruiter = Recruiter(id: uid, name: name, email: email, companyID: "NEEDS_COMPANY_ID")
                 let recruiterRef = db.collection("recruiters").document(uid)
                 batch.setData(newRecruiter.dictionary, forDocument: recruiterRef)
             }
             
-            //Commit the batch to save all data to Firestore
+            // 4. Commit the batch to save all data
             try await batch.commit()
             
-            //Update the app's state with the new user data
+            // 5. Update the app's state
             self.currentUser = newUser
             
         } catch {
@@ -95,16 +97,16 @@ class AuthViewModel: ObservableObject {
     func signOut() {
         do {
             try Auth.auth().signOut()
-            // Clear all local user data
             self.userSession = nil
             self.currentUser = nil
+            self.candidateProfile = nil
         } catch {
             print("DEBUG: Failed to sign out: \(error.localizedDescription)")
         }
     }
 
     func fetchCurrentUser() async {
-        guard let uid = userSession?.uid else { return } // Ensure a user is logged in
+        guard let uid = userSession?.uid else { return }
         
         do {
             let snapshot = try await db.collection("users").document(uid).getDocument()
@@ -114,12 +116,52 @@ class AuthViewModel: ObservableObject {
                 return
             }
             
-            self.currentUser = UserAccount(id: snapshot.documentID, dictionary: data)
+            let user = UserAccount(id: snapshot.documentID, dictionary: data)
+            self.currentUser = user
+            
+            if user?.userRole == .candidate {
+                await fetchCandidateProfile(uid: uid)
+            }
             
             print("DEBUG: Current user fetched: \(self.currentUser?.name ?? "N/A")")
             
         } catch {
             print("DEBUG: Failed to fetch user: \(error.localizedDescription)")
         }
+    }
+    
+    func fetchCandidateProfile(uid: String) async {
+        do {
+            let snapshot = try await db.collection("candidates").document(uid).getDocument()
+            
+            guard let data = snapshot.data() else {
+                print("DEBUG: Candidate profile was empty.")
+                return
+            }
+            
+            self.candidateProfile = Candidate(id: snapshot.documentID, dictionary: data)
+            print("DEBUG: Fetched candidate profile for \(self.candidateProfile?.name ?? "")")
+            
+        } catch {
+            print("DEBUG: Failed to fetch candidate profile: \(error.localizedDescription)")
+        }
+    }
+    
+    func updateCandidateProfile(_ profile: Candidate) async {
+
+        let uid = profile.id
+
+        isLoading = true
+        do {
+            let data = profile.dictionary
+            try await db.collection("candidates").document(uid).setData(data, merge: true)
+            
+            self.candidateProfile = profile
+            print("DEBUG: Candidate profile updated.")
+        } catch {
+            self.errorMessage = error.localizedDescription
+            print("DEBUG: Failed to update profile: \(error.localizedDescription)")
+        }
+        isLoading = false
     }
 }
