@@ -19,10 +19,12 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
 @main
 struct RelayApp: App {
+    @StateObject private var authViewModel = AuthViewModel()
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(authViewModel)
         }
     }
 }
