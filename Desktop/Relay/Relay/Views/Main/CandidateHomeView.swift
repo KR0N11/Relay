@@ -27,6 +27,7 @@ struct CandidateHomeView: View {
     @State private var phone: String = ""
     @State private var resumeURL: String = ""
     @State private var coverLetterURL: String = ""
+    
     @State private var prompts: [Prompt] = []
     
     @State private var sheetContext: SheetContext? = nil
@@ -54,106 +55,121 @@ struct CandidateHomeView: View {
     ]
     
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                
-                Text("My Profile")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-                
-                // --- Basic Info Section ---
-                VStack(alignment: .leading) {
-                    Text("My Info")
-                        .font(.headline)
-                    TextField("Name", text: $name)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    TextField("Phone (Optional)", text: $phone)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                }
-                
-                // --- Documents Section ---
-                VStack(alignment: .leading) {
-                    Text("My Documents")
-                        .font(.headline)
-                    TextField("Resume URL", text: $resumeURL)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                    TextField("Cover Letter URL (Optional)", text: $coverLetterURL)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                }
-                
-                // --- Prompts Section (Hinge-Style) ---
-                VStack(alignment: .leading) {
-                    Text("My Prompts")
-                        .font(.headline)
+        if authViewModel.candidateProfile != nil {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Welcome, \(name.isEmpty ? "Candidate" : name)!")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                        
+                        Text("This is your story. Make it stand out—it's the first impression recruiters will see.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                     
-                    ForEach(prompts) { prompt in
-                        PromptCard(prompt: prompt) {
-                            self.sheetContext = .editPrompt(prompt)
+                    VStack(alignment: .leading) {
+                        Text("My Info")
+                            .font(.headline)
+                        TextField("Name", text: $name)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        TextField("Phone (Optional)", text: $phone)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text("My Documents")
+                            .font(.headline)
+                        TextField("Resume URL", text: $resumeURL)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                        TextField("Cover Letter URL (Optional)", text: $coverLetterURL)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text("My Prompts")
+                            .font(.headline)
+                        
+                        ForEach(prompts) { prompt in
+                            PromptCard(prompt: prompt) {
+                                self.sheetContext = .editPrompt(prompt)
+                            }
+                        }
+                        
+                        if prompts.count < 3 {
+                            AddPromptButton {
+                                self.sheetContext = .selectPrompt
+                            }
                         }
                     }
                     
-                    if prompts.count < 3 {
-                        AddPromptButton {
-                            self.sheetContext = .selectPrompt
-                        }
+                    Spacer()
+                    
+                    Button(action: saveProfile) {
+                        Text(authViewModel.isLoading ? "Saving..." : "Save Changes")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(10)
+                    }
+                    .disabled(authViewModel.isLoading)
+                    
+                }
+                .padding()
+            }
+            .navigationTitle("My Profile")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Sign Out") {
+                        authViewModel.signOut()
                     }
                 }
-                
-                Spacer()
-                
-                // --- Save Button ---
-                Button(action: saveProfile) {
-                    Text(authViewModel.isLoading ? "Saving..." : "Save Changes")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                }
-                .disabled(authViewModel.isLoading)
             }
-            .padding()
-        }
-        .onAppear(perform: loadProfileData)
-        .sheet(item: $sheetContext) { context in
-            switch context {
-                
-            case .selectPrompt:
-                PromptSelectionView(promptBank: promptBank, onSelect: { question in
-                    let newPrompt = Prompt(question: question, answer: "")
-                    self.prompts.append(newPrompt)
-                    self.sheetContext = .editPrompt(newPrompt)
-                })
-                
-            case .editPrompt(let prompt):
-                if let index = self.prompts.firstIndex(where: { $0.id == prompt.id }) {
+            .onAppear(perform: loadProfileData)
+            .onChange(of: authViewModel.candidateProfile) {
+                loadProfileData()
+            }
+            .sheet(item: $sheetContext) { context in
+                switch context {
                     
-                    PromptEditorView(
-                        prompt: $prompts[index],
-                        onSave: {
-                            self.sheetContext = nil // just close
-                        },
-                        onDelete: {
-                            self.prompts.remove(at: index) // remove from list
-                            self.sheetContext = nil // close
-                        }
-                    )
+                case .selectPrompt:
+                    PromptSelectionView(promptBank: promptBank, onSelect: { question in
+                        let newPrompt = Prompt(question: question, answer: "")
+                        self.prompts.append(newPrompt)
+                        self.sheetContext = .editPrompt(newPrompt)
+                    })
+                    
+                case .editPrompt(let prompt):
+                    if let index = self.prompts.firstIndex(where: { $0.id == prompt.id }) {
+                        PromptEditorView(
+                            prompt: $prompts[index],
+                            onSave: {
+                                self.sheetContext = nil
+                            },
+                            onDelete: {
+                                self.prompts.remove(at: index)
+                                self.sheetContext = nil
+                            }
+                        )
+                    }
                 }
             }
+        } else {
+            ProgressView()
         }
     }
     
-    //Helper Functions
-    
     func loadProfileData() {
-        if let profile = authViewModel.candidateProfile {
-            self.name = profile.name
-            self.phone = profile.phone
-            self.resumeURL = profile.resumeURL
-            self.coverLetterURL = profile.coverLetterURL
-            self.prompts = profile.prompts
-        }
+        guard let profile = authViewModel.candidateProfile else { return }
+        self.name = profile.name
+        self.phone = profile.phone
+        self.resumeURL = profile.resumeURL
+        self.coverLetterURL = profile.coverLetterURL
+        self.prompts = profile.prompts
     }
     
     func saveProfile() {
@@ -171,7 +187,9 @@ struct CandidateHomeView: View {
     }
 }
 
-//Helper UI Views
+//
+// --- ALL HELPER VIEWS AND PREVIEWS BELOW ---
+//
 
 struct AddPromptButton: View {
     var action: () -> Void
@@ -270,17 +288,15 @@ struct PromptSelectionView: View {
     }
 }
 
-
 struct PromptEditorView: View {
     @Binding var prompt: Prompt
     var onSave: () -> Void
-    var onDelete: () -> Void // new delete action
+    var onDelete: () -> Void
     
     @Environment(\.dismiss) var dismiss
     
     var body: some View {
         VStack {
-            // header
             HStack {
                 Button("Cancel") { dismiss() }
                 Spacer()
@@ -292,7 +308,6 @@ struct PromptEditorView: View {
                 .font(.headline)
                 .padding(.bottom)
 
-            // editor
             Text(prompt.question)
                 .font(.callout)
                 .fontWeight(.semibold)
@@ -318,6 +333,7 @@ struct PromptEditorView: View {
     }
 }
 
+// --- PREVIEWS ---
 
 #Preview("CandidateHomeView") {
     CandidateHomeView()
@@ -327,8 +343,7 @@ struct PromptEditorView: View {
 #Preview("PromptSelectionView") {
     let previewBank: [PromptCategory] = [
         PromptCategory(name: "Projects & Skills", questions: ["q1", "q2"]),
-        PromptCategory(name: "Passion & Personality", questions: ["q3", "q4"]),
-        PromptCategory(name: "Career & Goals", questions: ["q5", "q6"])
+        PromptCategory(name:"Passion & Personality", questions: ["q3", "q4"]),
     ]
     return PromptSelectionView(
         promptBank: previewBank,
@@ -340,6 +355,6 @@ struct PromptEditorView: View {
     PromptEditorView(
         prompt: .constant(Prompt(question: "My proudest project is...", answer: "I built this app!")),
         onSave: { },
-        onDelete: { } // add delete to preview
+        onDelete: { }
     )
 }

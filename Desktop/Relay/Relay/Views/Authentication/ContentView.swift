@@ -13,11 +13,11 @@ struct ContentView: View {
     var body: some View {
         Group {
             if authViewModel.userSession == nil {
-                // User is NOT logged in
+                // Not logged in
                 RoleSelectionView()
             } else {
-                // User IS logged in
-                MainDashboardView()
+                // Logged in
+                MainTabView()
             }
         }
     }

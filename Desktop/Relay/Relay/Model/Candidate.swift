@@ -34,7 +34,7 @@ struct Prompt: Identifiable, Hashable {
 
 
 // this is our main candidate model
-struct Candidate: Identifiable {
+struct Candidate: Identifiable, Equatable {
     
     let id: String // matches auth uid
     var name: String
